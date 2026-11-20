@@ -47,7 +47,7 @@ func TestParseInputAndValidateSelection(t *testing.T) {
 
 func TestParseLFSPointerIsStrict(t *testing.T) {
 	valid := fmt.Sprintf("%s\noid sha256:%064x\nsize 17\n", lfsPointerVersion, 42)
-	file, ok, err := parseLFSPointer([]byte(valid))
+	file, ok, err := gitdrs.ParseLFSPointer([]byte(valid))
 	if err != nil || !ok {
 		t.Fatalf("parse valid pointer: ok=%t err=%v", ok, err)
 	}
@@ -61,11 +61,11 @@ func TestParseLFSPointerIsStrict(t *testing.T) {
 		strings.Replace(valid, "\n", "\r\n", 1),
 		strings.Replace(valid, fmt.Sprintf("%064x", 42), "not-a-hash", 1),
 	} {
-		if _, _, err := parseLFSPointer([]byte(invalid)); err == nil {
+		if _, _, err := gitdrs.ParseLFSPointer([]byte(invalid)); err == nil {
 			t.Fatalf("expected malformed pointer to be rejected: %q", invalid)
 		}
 	}
-	if _, ok, err := parseLFSPointer([]byte(`{"resourceType":"Patient"}`)); err != nil || ok {
+	if _, ok, err := gitdrs.ParseLFSPointer([]byte(`{"resourceType":"Patient"}`)); err != nil || ok {
 		t.Fatalf("ordinary NDJSON should not be treated as a pointer: ok=%t err=%v", ok, err)
 	}
 }

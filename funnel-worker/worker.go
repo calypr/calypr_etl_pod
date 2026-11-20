@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -410,45 +407,11 @@ func readLFSPointer(path string, size int64) (gitdrs.File, bool, error) {
 	if err != nil {
 		return gitdrs.File{}, false, err
 	}
-	return parseLFSPointer(content)
+	return gitdrs.ParseLFSPointer(content)
 }
 
 func bytesHaveLFSVersionPrefix(value []byte) bool {
 	return len(value) >= len("version ") && string(value[:len("version ")]) == "version "
-}
-
-func parseLFSPointer(content []byte) (gitdrs.File, bool, error) {
-	if !bytesHaveLFSVersionPrefix(content) {
-		return gitdrs.File{}, false, nil
-	}
-	text := string(content)
-	if strings.ContainsRune(text, '\r') {
-		return gitdrs.File{}, false, errors.New("Git-LFS pointer must use canonical LF line endings")
-	}
-	if !strings.HasPrefix(text, lfsPointerVersion+"\n") {
-		return gitdrs.File{}, false, errors.New("unsupported or malformed Git-LFS pointer version")
-	}
-	text = strings.TrimSuffix(text, "\n")
-	lines := strings.Split(text, "\n")
-	if len(lines) != 3 || lines[0] != lfsPointerVersion || !strings.HasPrefix(lines[1], "oid sha256:") || !strings.HasPrefix(lines[2], "size ") {
-		return gitdrs.File{}, false, errors.New("only three-line Git-LFS SHA-256 pointers are supported; extensions, placeholders, and DRS-URI pointers are unsupported")
-	}
-	oidHex := strings.TrimPrefix(lines[1], "oid sha256:")
-	if len(oidHex) != sha256.Size*2 {
-		return gitdrs.File{}, false, errors.New("Git-LFS pointer OID must be a full SHA-256 hash")
-	}
-	if _, err := hex.DecodeString(oidHex); err != nil {
-		return gitdrs.File{}, false, errors.New("Git-LFS pointer OID must be hexadecimal")
-	}
-	sizeText := strings.TrimPrefix(lines[2], "size ")
-	if sizeText == "" || strings.HasPrefix(sizeText, "+") || strings.HasPrefix(sizeText, "-") {
-		return gitdrs.File{}, false, errors.New("Git-LFS pointer size must be a nonnegative decimal integer")
-	}
-	size, err := strconv.ParseInt(sizeText, 10, 64)
-	if err != nil || size < 0 || strconv.FormatInt(size, 10) != sizeText {
-		return gitdrs.File{}, false, errors.New("Git-LFS pointer size must be a nonnegative decimal integer")
-	}
-	return gitdrs.File{Path: "", OID: "sha256:" + strings.ToLower(oidHex), Size: size}, true, nil
 }
 
 func validateReceipt(receipt loomingest.Receipt, operationID string) error {

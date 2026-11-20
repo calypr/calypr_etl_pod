@@ -1,11 +1,11 @@
 module github.com/calypr/calypr_etl_pod/funnel-job
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/bytedance/sonic v1.15.4
-	github.com/calypr/git-drs v0.7.12-0.20261103173235-90375f7554b0
-	github.com/calypr/loom/client v0.0.0-20261111045332-89cbb21a884a
+	github.com/calypr/git-drs v0.7.12-0.20261120172518-ff59c171cc26
+	github.com/calypr/loom/client v0.0.0-20261120172519-5010d9b63797
 	github.com/calypr/syfon/apigen v0.3.5
 	github.com/google/go-github/v87 v87.0.0
 	github.com/google/uuid v1.6.0

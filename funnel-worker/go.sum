@@ -19,10 +19,10 @@ github.com/bytedance/sonic v1.15.4 h1:FgtV/4aBHpla9AxuMpuuzVUpa/Cf3izufkxNmnEzdI
 github.com/bytedance/sonic v1.15.4/go.mod h1:8e51yTPdY8M6t+vvGL1c2Y1xL9i+frEeIAQAEl75NUc=
 github.com/bytedance/sonic/loader v0.5.2 h1:0QtP1gevc1OZ6/H8Lb9BRZiCXd1Ftjd3OKuj1T1lBIo=
 github.com/bytedance/sonic/loader v0.5.2/go.mod h1:AR4NYCk5DdzZizZ5djGqQ92eEhCCcdf5x77udYiSJRo=
-github.com/calypr/git-drs v0.7.12-0.20261103173235-90375f7554b0 h1:SXaOaqkcugipglGD3dp8ceVqH8LWDDG5V1EbHXDsTKM=
-github.com/calypr/git-drs v0.7.12-0.20261103173235-90375f7554b0/go.mod h1:1M2IZ9iZCWEgUokRTKj7DTrbRNACEetLV2MZE10ujRw=
-github.com/calypr/loom/client v0.0.0-20261111045332-89cbb21a884a h1:iqjmoDmUSBZvSmqndZhu/U2W6vmDs3FEdutu9+TUOXQ=
-github.com/calypr/loom/client v0.0.0-20261111045332-89cbb21a884a/go.mod h1:80RrTVRtOC/1f/0Q1RBwR0j6jB0/x4YTOebLDoUBmsA=
+github.com/calypr/git-drs v0.7.12-0.20261120172518-ff59c171cc26 h1:g3PuiJqa2kOSL6mzq8OXPjw2Q/GS+NRG00zjjs0Pw98=
+github.com/calypr/git-drs v0.7.12-0.20261120172518-ff59c171cc26/go.mod h1:1M2IZ9iZCWEgUokRTKj7DTrbRNACEetLV2MZE10ujRw=
+github.com/calypr/loom/client v0.0.0-20261120172519-5010d9b63797 h1:6j0Y4Uc2ISpmEaG7j3FYlEselN5QGza7IEPMvLJLYyc=
+github.com/calypr/loom/client v0.0.0-20261120172519-5010d9b63797/go.mod h1:eVjogxnUhUb1oT2EFIo8AReGSCHVPtkUmTdQtRrvjsQ=
 github.com/calypr/syfon/apigen v0.3.5 h1:cT0UMil2FuC7aW/xMOaff40I5vg4Ujr3ZkOLWuj7kFI=
 github.com/calypr/syfon/apigen v0.3.5/go.mod h1:9A7yCH7SfxCRxQyRr+xyuvv4HKQLORWN05Dxj6kxq2M=
 github.com/calypr/syfon/client v0.3.4-0.20260929222956-16a8b4363219 h1:yGl8yJbjWZ2HhT7S82ki38X0R1ZO0tXFzAAaYQH1UcE=

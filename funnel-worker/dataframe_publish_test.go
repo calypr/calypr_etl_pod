@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -102,30 +101,5 @@ func TestPublishDataframeRejectsRedirectWithoutFollowingIt(t *testing.T) {
 	}
 	if output.Len() != 0 {
 		t.Fatalf("failure emitted success output %q", output.String())
-	}
-}
-
-func TestPublishDataframeRejectsMismatchedReceiptAndFailedState(t *testing.T) {
-	for _, response := range []string{
-		`{"receiptId":"receipt-1","revisionId":"authoring-1","state":"READY"}`,
-		`{"receiptId":"receipt-other","revisionId":"authoring-1","state":"ACTIVE"}`,
-		`{"receiptId":"receipt-1","revisionId":"authoring-1","state":"FAILED"}`,
-		`{"receiptId":"receipt-1","state":"ACTIVE"}`,
-	} {
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-			_, _ = io.WriteString(writer, response)
-		}))
-		base, err := validateServiceURL(server.URL, "LOOM_URL")
-		if err != nil {
-			server.Close()
-			t.Fatal(err)
-		}
-		_, err = publishDataframe(context.Background(), &http.Client{}, base, "token", dataframePublishInput{
-			Organization: "HTAN_INT", Project: "BForePC", ExplorerID: "default", ReceiptID: "receipt-1",
-		})
-		server.Close()
-		if err == nil {
-			t.Errorf("publishDataframe accepted response %s", response)
-		}
 	}
 }

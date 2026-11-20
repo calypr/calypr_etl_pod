@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	gitdrs "github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/inventory"
 )
 
@@ -54,7 +55,7 @@ func (s *githubSource) listDataPointers(ctx context.Context, repository githubRe
 		if !bytes.HasPrefix(data, []byte(lfsPointerVersion+"\n")) {
 			continue
 		}
-		pointer, ok, err := parseLFSPointer(data)
+		pointer, ok, err := gitdrs.ParseLFSPointer(data)
 		if err != nil {
 			return nil, fmt.Errorf("parse data pointer %s: %w", entry.GetPath(), err)
 		}
