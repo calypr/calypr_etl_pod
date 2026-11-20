@@ -71,20 +71,16 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Create and Push Multi-Arch Manifest
         run: |
-          BRANCH=$(echo ${GITHUB_REF#refs/*/} | tr / _)
+          BRANCH=$(echo "${GITHUB_REF#refs/*/}" | tr / _)
           REPO=quay.io/ohsu-comp-bio/aced-etl
-
-          # Create the manifest pointing to both specific images
-          docker manifest create $REPO:$BRANCH \
-            $REPO:$BRANCH-amd64 \
-            $REPO:$BRANCH-arm64
-
-          docker manifest push $REPO:$BRANCH
-
-          # Add 'latest' tag if on main branch
+          tags=("-t" "$REPO:$BRANCH")
           if [[ $BRANCH == 'main' ]]; then
-            docker manifest create $REPO:latest $REPO:main-amd64 $REPO:main-arm64
-            docker manifest push $REPO:latest
+            tags+=("-t" "$REPO:latest")
           fi
+          docker buildx imagetools create "${tags[@]}" \
+            "$REPO:$BRANCH-amd64" "$REPO:$BRANCH-arm64"
