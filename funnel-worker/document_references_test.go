@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -73,6 +75,24 @@ func TestRunJobReconcilesOnlySelectedDocumentReference(t *testing.T) {
 	for _, expected := range []string{"authored-drs", "retain me", "generated-drs", "ResearchStudy/study", `"size":"7"`} {
 		if !strings.Contains(data, expected) {
 			t.Errorf("published DocumentReference missing %q: %s", expected, data)
+		}
+	}
+}
+
+func TestReconcileDocumentReferencePreservesUnchangedRowsAndOriginalOnFailure(t *testing.T) {
+	line := `{ "resourceType": "DocumentReference", "id": "authored" }` + "\n"
+	path := filepath.Join(t.TempDir(), "DocumentReference.ndjson")
+	if err := os.WriteFile(path, []byte(line), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int64{int64(len(line)), int64(len(line) - 1)} {
+		err := reconcileDocumentReferenceFile(context.Background(), path, "https://syfon.example", "project", nil, nil, nil, limit, nil)
+		if (err != nil) != (limit < int64(len(line))) {
+			t.Fatalf("limit %d returned %v", limit, err)
+		}
+		saved, err := os.ReadFile(path)
+		if err != nil || string(saved) != line {
+			t.Fatalf("authored record changed: %q, %v", saved, err)
 		}
 	}
 }
