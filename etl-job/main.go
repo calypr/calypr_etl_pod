@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/calypr/forge/metadata"
 	gitdrs "github.com/calypr/git-drs/client"
 )
 
@@ -242,8 +241,7 @@ func (j *job) put() error {
 		return err
 	}
 
-	loadPath := filepath.Join(defaultRepositoryDir, j.project)
-	workspaceDir := filepath.Dir(loadPath)
+	workspaceDir := defaultRepositoryDir
 	if err := runOperation("create repository workspace", func() error {
 		return os.MkdirAll(workspaceDir, 0o755)
 	}); err != nil {
@@ -252,7 +250,6 @@ func (j *job) put() error {
 	targetDir := filepath.Join(workspaceDir, repoName(j.input.GHRepoURL))
 	defer func() {
 		slog.Info("ETL operation started", "operation", "clean up repository workspace")
-		_ = os.RemoveAll(loadPath)
 		_ = os.RemoveAll(targetDir)
 		slog.Info("ETL operation completed", "operation", "clean up repository workspace")
 	}()
@@ -332,34 +329,12 @@ func (j *job) put() error {
 		slog.Info("no Git-DRS pointer files require hydration")
 	}
 
-	var reconciliation metadata.ReconcileReport
-	if err := runOperation("reconcile Git metadata with Syfon", func() error {
-		return withWorkingDirectory(targetDir, func() error {
-			var err error
-			reconciliation, err = metadata.ReconcileGitPointers(j.ctx, metadata.ReconcileOptions{
-				RepositoryRoot: targetDir,
-				GitRef:         j.input.GHCommitHash,
-				FHIRDirectory:  filepath.Join(targetDir, metaDir),
-				ProfileName:    j.input.Profile,
-				GitRemoteName:  j.input.Profile,
-			})
-			return err
-		})
-	}); err != nil {
-		return fmt.Errorf("generate forge metadata: %w", err)
-	}
-	message := fmt.Sprintf("Git/Syfon reconciliation: pointers=%d authored=%d matched=%d generated=%d missing_syfon=%d metadata_only=%d authored_without_sha=%d", reconciliation.GitPointers, reconciliation.AuthoredRows, reconciliation.MatchedRows, reconciliation.GeneratedRows, len(reconciliation.MissingSyfonRecords), len(reconciliation.MetadataOnlySHA256), reconciliation.AuthoredRowsWithoutSHA)
-	slog.Info(message)
-	logMissingSyfonRecords(reconciliation.MissingSyfonRecords)
-	if len(reconciliation.MetadataOnlySHA256) > 0 {
-		warning := fmt.Sprintf("WARNING: retained %d authored DocumentReference SHA256 values not present in the Git snapshot", len(reconciliation.MetadataOnlySHA256))
-		slog.Warn(warning)
-	}
-	if err := runOperation("prepare generated metadata", func() error {
-		if err := moveGeneratedMetadata(targetDir, loadPath); err != nil {
+	metadataDirectory := filepath.Join(targetDir, metaDir)
+	if err := runOperation("reconcile DocumentReferences with Syfon", func() error {
+		if err := j.reconcileDocumentReferences(targetDir, metadataDirectory); err != nil {
 			return err
 		}
-		return validateDocumentReferences(loadPath)
+		return validateDocumentReferences(metadataDirectory)
 	}); err != nil {
 		return err
 	}
@@ -370,9 +345,9 @@ func (j *job) put() error {
 	}
 	if err := runOperation("stage FHIR metadata and deploy repository Explorer", func() error {
 		if !present {
-			return j.snapshotAndActivate(loadPath)
+			return j.snapshotAndActivate(metadataDirectory)
 		}
-		if err := j.uploadMetadata(loadPath); err != nil {
+		if err := j.uploadMetadata(metadataDirectory); err != nil {
 			return err
 		}
 		return j.deployRepositoryExplorerConfigV2(definition)
@@ -382,28 +357,10 @@ func (j *job) put() error {
 	return nil
 }
 
-func logMissingSyfonRecords(issues []metadata.ReconcileIssue) {
-	if len(issues) == 0 {
-		return
-	}
-	slog.Warn("Git pointers without scoped Syfon records; metadata was not generated for these files", "count", len(issues))
-	for i, issue := range issues {
-		paths := strings.Join(issue.Paths, ", ")
-		if paths == "" {
-			paths = "<unknown>"
-		}
-		slog.Warn("missing scoped Syfon record",
-			"item", fmt.Sprintf("%d/%d", i+1, len(issues)),
-			"sha256", issue.SHA256,
-			"paths", paths,
-		)
-	}
-}
-
 func (j *job) uploadMetadata(dir string) error {
 	files, err := listNDJSON(dir)
 	if err != nil {
-		return fmt.Errorf("discover generated metadata: %w", err)
+		return fmt.Errorf("discover FHIR metadata: %w", err)
 	}
 	if len(files) == 0 {
 		return fmt.Errorf("no NDJSON files found in %s", dir)
@@ -1148,23 +1105,6 @@ func withWorkingDirectory(dir string, fn func() error) error {
 	}
 	defer os.Chdir(old)
 	return fn()
-}
-
-func moveGeneratedMetadata(targetDir, loadDir string) error {
-	if err := os.MkdirAll(loadDir, 0o755); err != nil {
-		return fmt.Errorf("create metadata load directory: %w", err)
-	}
-	files, err := listNDJSON(filepath.Join(targetDir, metaDir))
-	if err != nil {
-		return err
-	}
-	for _, source := range files {
-		destination := filepath.Join(loadDir, filepath.Base(source))
-		if err := os.Rename(source, destination); err != nil {
-			return fmt.Errorf("move %s: %w", filepath.Base(source), err)
-		}
-	}
-	return nil
 }
 
 func validateDocumentReferences(dir string) error {

@@ -1,13 +1,13 @@
-FROM golang:1.26.5-bookworm AS go-builder
+FROM golang:1.27.3-bookworm AS go-builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
 ENV GOPROXY=direct
 RUN go mod download
-COPY main.go ./
+COPY main.go document_references.go syfon_lookup.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/calypr-etl .
 
-# Git-DRS and Forge are linked as Go libraries; no Python runtime or CLI
+# Git-DRS is linked as a Go library; no Python runtime or CLI
 # installation is needed in the ETL image.
 
 FROM debian:bookworm-slim
