@@ -22,24 +22,24 @@ func TestRunJobReconcilesOnlySelectedDocumentReference(t *testing.T) {
 		return fmt.Sprintf("%s\noid sha256:%s\nsize 7\n", lfsPointerVersion, hash)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/calypr/meta/git/commits/"+commit, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v3/repos/calypr/meta/git/commits/"+commit, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"tree":{"sha":%q}}`, tree)
 	})
-	mux.HandleFunc("/repos/calypr/meta/git/trees/"+tree, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v3/repos/calypr/meta/git/trees/"+tree, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("recursive") != "1" {
 			t.Error("expected recursive inventory")
 		}
 		fmt.Fprintf(w, `{"tree":[{"path":"data/one","mode":"100644","type":"blob","sha":%q,"size":%d},{"path":"data/two","mode":"100644","type":"blob","sha":%q,"size":%d}]}`, firstBlob, len(pointer(authoredHash)), secondBlob, len(pointer(generatedHash)))
 	})
-	mux.HandleFunc("/repos/calypr/meta/git/blobs/"+firstBlob, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, pointer(authoredHash)) })
-	mux.HandleFunc("/repos/calypr/meta/git/blobs/"+secondBlob, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, pointer(generatedHash)) })
-	mux.HandleFunc("/repos/calypr/meta/contents/META/DocumentReference.ndjson", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v3/repos/calypr/meta/git/blobs/"+firstBlob, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, pointer(authoredHash)) })
+	mux.HandleFunc("/api/v3/repos/calypr/meta/git/blobs/"+secondBlob, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, pointer(generatedHash)) })
+	mux.HandleFunc("/api/v3/repos/calypr/meta/contents/META/DocumentReference.ndjson", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("ref") != commit {
 			t.Error("DocumentReference request must use the pinned commit")
 		}
 		fmt.Fprintf(w, `{"resourceType":"DocumentReference","id":"authored","description":"retain me","identifier":[{"system":%q,"value":%q}]}`+"\n", fileSHA256System, authoredHash)
 	})
-	mux.HandleFunc("/repos/calypr/meta/contents/META/ResearchStudy.ndjson", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v3/repos/calypr/meta/contents/META/ResearchStudy.ndjson", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("ref") != commit {
 			t.Error("ResearchStudy request must use the pinned commit")
 		}

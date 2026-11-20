@@ -75,8 +75,8 @@ func TestRunJobFetchesPinnedFilesHydratesAndPublishesReceipt(t *testing.T) {
 	patient := `{"resourceType":"Patient","id":"1"}`
 	pointer := fmt.Sprintf("%s\noid sha256:%064x\nsize %d\n", lfsPointerVersion, 99, len(patient))
 	contents := map[string]string{
-		"/repos/calypr/meta/contents/META/Patient.ndjson":  pointer,
-		"/repos/calypr/meta/contents/META/Specimen.ndjson": "",
+		"/api/v3/repos/calypr/meta/contents/META/Patient.ndjson":  pointer,
+		"/api/v3/repos/calypr/meta/contents/META/Specimen.ndjson": "",
 	}
 	githubServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet || request.URL.Query().Get("ref") != commit {
@@ -155,7 +155,7 @@ func TestFetchAndHydrateAcceptsMaximumLFSSizeWithoutCountingPointerText(t *testi
 	const maximum = int64(60 << 20)
 	commit := strings.Repeat("e", 40)
 	pointer := fmt.Sprintf("%s\noid sha256:%064x\nsize %d\n", lfsPointerVersion, 7, maximum)
-	github := newContentsSource(t, commit, map[string]string{"/repos/calypr/meta/contents/META/Patient.ndjson": pointer})
+	github := newContentsSource(t, commit, map[string]string{"/api/v3/repos/calypr/meta/contents/META/Patient.ndjson": pointer})
 	repository, err := parseGitHubRepository("https://github.com/calypr/meta")
 	if err != nil {
 		t.Fatal(err)
@@ -175,8 +175,8 @@ func TestFetchAndHydrateEnforcesPerFileLimitWithoutDatasetBudget(t *testing.T) {
 	commit := strings.Repeat("f", 40)
 	zeroPointer := fmt.Sprintf("%s\noid sha256:%064x\nsize 0\n", lfsPointerVersion, 9)
 	github := newContentsSource(t, commit, map[string]string{
-		"/repos/calypr/meta/contents/META/Group.ndjson":   "data",
-		"/repos/calypr/meta/contents/META/Patient.ndjson": zeroPointer,
+		"/api/v3/repos/calypr/meta/contents/META/Group.ndjson":   "data",
+		"/api/v3/repos/calypr/meta/contents/META/Patient.ndjson": zeroPointer,
 	})
 	repository, err := parseGitHubRepository("https://github.com/calypr/meta")
 	if err != nil {
@@ -209,8 +209,8 @@ func TestFetchAndHydrateEnforcesPerFileLimitWithoutDatasetBudget(t *testing.T) {
 func TestRunJobAllowsSelectedFilesWhoseTotalExceedsPerFileLimit(t *testing.T) {
 	commit := strings.Repeat("a", 40)
 	github := newContentsSource(t, commit, map[string]string{
-		"/repos/calypr/meta/contents/META/Patient.ndjson":  "1234",
-		"/repos/calypr/meta/contents/META/Specimen.ndjson": "5678",
+		"/api/v3/repos/calypr/meta/contents/META/Patient.ndjson":  "1234",
+		"/api/v3/repos/calypr/meta/contents/META/Specimen.ndjson": "5678",
 	})
 	input := inputData{
 		ProjectID: "org-project", Organization: "org", Project: "project",

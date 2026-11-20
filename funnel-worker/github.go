@@ -10,12 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	github "github.com/google/go-github/v87/github"
 )
 
 type githubSource struct {
-	baseURL string
-	token   string
-	client  *http.Client
+	client *github.Client
 }
 
 func newGitHubSource(token string, client *http.Client) (*githubSource, error) {
@@ -34,7 +34,19 @@ func newGitHubSourceAt(baseURL, token string, client *http.Client) (*githubSourc
 	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	return &githubSource{baseURL: baseURL, token: token, client: &copyClient}, nil
+	options := []github.ClientOptionsFunc{
+		github.WithHTTPClient(&copyClient),
+		github.WithAuthToken(token),
+		github.WithUserAgent(githubRequestAgent),
+	}
+	if baseURL != githubAPIBaseURL {
+		options = append(options, github.WithEnterpriseURLs(baseURL, baseURL))
+	}
+	api, err := github.NewClient(options...)
+	if err != nil {
+		return nil, fmt.Errorf("configure GitHub API client: %w", err)
+	}
+	return &githubSource{client: api}, nil
 }
 
 func (s *githubSource) fetchPinned(ctx context.Context, repository githubRepository, commit, path, destination string, limit int64) (int64, error) {
@@ -42,23 +54,12 @@ func (s *githubSource) fetchPinned(ctx context.Context, repository githubReposit
 		return 0, errors.New("invalid GitHub file size limit")
 	}
 	name := strings.TrimPrefix(path, "META/")
-	endpoint := fmt.Sprintf("%s/repos/%s/%s/contents/META/%s?ref=%s", strings.TrimRight(s.baseURL, "/"), url.PathEscape(repository.Owner), url.PathEscape(repository.Name), url.PathEscape(name), url.QueryEscape(strings.ToLower(commit)))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return 0, fmt.Errorf("create pinned GitHub request for %s: %w", path, err)
-	}
-	req.Header.Set("Authorization", "Bearer "+s.token)
-	req.Header.Set("Accept", "application/vnd.github.raw+json")
-	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
-	req.Header.Set("User-Agent", githubRequestAgent)
-	resp, err := s.client.Do(req)
+	endpoint := fmt.Sprintf("repos/%s/%s/contents/META/%s?ref=%s", url.PathEscape(repository.Owner), url.PathEscape(repository.Name), url.PathEscape(name), url.QueryEscape(strings.ToLower(commit)))
+	resp, err := s.openRaw(ctx, endpoint)
 	if err != nil {
 		return 0, fmt.Errorf("fetch pinned GitHub file %s: %w", path, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("fetch pinned GitHub file %s: HTTP %d", path, resp.StatusCode)
-	}
 	if resp.ContentLength > limit {
 		return 0, fmt.Errorf("GitHub file %s exceeds the configured size limit", path)
 	}
@@ -92,4 +93,28 @@ func (s *githubSource) fetchPinned(ctx context.Context, repository githubReposit
 	}
 	removeStaged = false
 	return count, nil
+}
+
+func (s *githubSource) openRaw(ctx context.Context, endpoint string) (*http.Response, error) {
+	req, err := s.client.NewRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.raw+json")
+	resp, err := s.client.BareDo(req)
+	if err != nil {
+		return nil, githubResponseError(resp, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return resp.Response, nil
+}
+
+func githubResponseError(resp *github.Response, err error) error {
+	if resp != nil && resp.Response != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return err
 }

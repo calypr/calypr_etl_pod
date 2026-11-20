@@ -28,7 +28,6 @@ const (
 	jobTimeout         = time.Hour
 	lfsPointerVersion  = "version https://git-lfs.github.com/spec/v1"
 	githubAPIBaseURL   = "https://api.github.com"
-	githubAPIVersion   = "2022-11-28"
 	githubRequestAgent = "calypr-funnel-etl"
 )
 

@@ -6,6 +6,7 @@ require (
 	github.com/bytedance/sonic v1.15.4
 	github.com/calypr/git-drs v0.7.11
 	github.com/calypr/loom/client v0.0.0-20261111045332-89cbb21a884a
+	github.com/google/go-github/v87 v87.0.0
 	github.com/google/uuid v1.6.0
 )
 
@@ -30,6 +31,7 @@ require (
 	github.com/gofiber/utils/v2 v2.6.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
+	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
