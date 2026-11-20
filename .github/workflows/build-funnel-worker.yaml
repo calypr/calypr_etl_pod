@@ -1,0 +1,172 @@
+name: Build and publish Funnel dataframe worker
+
+on:
+  pull_request:
+    paths:
+      - 'funnel-worker/**'
+      - '.github/workflows/build-funnel-worker.yaml'
+  push:
+    paths:
+      - 'funnel-worker/**'
+      - '.github/workflows/build-funnel-worker.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funnel-dataframe-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: quay.io/ohsu-comp-bio/aced-etl
+
+jobs:
+  test:
+    name: Test Funnel worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: funnel-worker/go.mod
+          cache: true
+          cache-dependency-path: funnel-worker/go.sum
+
+      - name: Run Go tests
+        working-directory: funnel-worker
+        run: go test -count=1 ./...
+
+      - name: Run Go vet
+        working-directory: funnel-worker
+        run: go vet ./...
+
+  build-and-push:
+    name: Build and push ${{ matrix.arch }} Funnel worker
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch,prefix=funnel-worker-
+            type=sha,format=short,prefix=funnel-worker-
+
+      - name: Log in to Quay.io
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./funnel-worker
+          file: ./funnel-worker/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: >-
+            type=image,name=${{ env.IMAGE }},push-by-digest=true,
+            name-canonical=true,push=true
+          cache-from: type=gha,scope=funnel-worker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=funnel-worker-${{ matrix.arch }}
+
+      - name: Export image digest
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/funnel-worker-digests"
+          digest_file="$RUNNER_TEMP/funnel-worker-digests/$ARCH.txt"
+          printf '%s\n' "${{ steps.build.outputs.digest }}" > "$digest_file"
+
+      - name: Upload image digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: funnel-worker-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/funnel-worker-digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Push multi-architecture Funnel worker manifest
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Download image digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/funnel-worker-digests
+          pattern: funnel-worker-digest-*
+          merge-multiple: true
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch,prefix=funnel-worker-
+            type=sha,format=short,prefix=funnel-worker-
+
+      - name: Log in to Quay.io
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and push manifest list
+        env:
+          DOCKER_METADATA_OUTPUT_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          tag_args=()
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then
+              tag_args+=("-t" "$tag")
+            fi
+          done <<< "$DOCKER_METADATA_OUTPUT_TAGS"
+
+          sources=()
+          for digest_file in "$RUNNER_TEMP"/funnel-worker-digests/*.txt; do
+            digest=$(tr -d '\r\n' < "$digest_file")
+            if [ -n "$digest" ]; then
+              sources+=("${IMAGE}@${digest}")
+            fi
+          done
+
+          if [ "${#sources[@]}" -eq 0 ]; then
+            echo "No Funnel worker image digests were exported" >&2
+            exit 1
+          fi
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
