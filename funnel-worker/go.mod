@@ -3,8 +3,10 @@ module github.com/calypr/calypr_etl_pod/funnel-job
 go 1.27.3
 
 require (
+	github.com/bytedance/sonic v1.15.4
 	github.com/calypr/git-drs v0.7.11
 	github.com/calypr/loom/client v0.0.0-20261111045332-89cbb21a884a
+	github.com/google/uuid v1.6.0
 )
 
 require (
@@ -13,7 +15,6 @@ require (
 	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
-	github.com/bytedance/sonic v1.15.4 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
 	github.com/calypr/syfon/apigen v0.3.5 // indirect
 	github.com/calypr/syfon/client v0.3.4-0.20260929222956-16a8b4363219 // indirect
@@ -29,7 +30,6 @@ require (
 	github.com/gofiber/utils/v2 v2.6.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

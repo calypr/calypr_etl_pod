@@ -5,7 +5,16 @@ Use `run` to load selected FHIR files into Loom’s ArangoDB source store. Use
 
 ## Load selected metadata
 
-This image is the source-acquisition worker for selected metadata publication. It downloads only requested files from one immutable GitHub commit, hydrates Git-LFS pointers through the published Git-DRS client, and passes private staged files to the Loom ingestion client. The client begins or resumes one durable source load, then asks the worker to hydrate and upload each missing file in order. The worker removes each staged file after its upload finishes, keeping local disk use near the largest selected file. Loom remains responsible for authoritative project replacement and durable recipe publication.
+The worker fetches selected files from one pinned GitHub commit, hydrates
+Git-LFS pointers through Git-DRS, and passes staged files to Loom. It removes
+each staged file after upload. Loom manages the source load and publication.
+
+Selecting `META/DocumentReference.ndjson` also reconciles it against scoped
+Syfon records for data pointers in that commit. The worker preserves authored
+records and generates missing references for unambiguous matches. If generation
+needs a study ID, the commit must contain `META/ResearchStudy.ndjson` with a
+study ID. The worker reads that file for context and uploads it only if selected.
+Loom generates relationships from the uploaded FHIR records.
 
 The worker does not use Git, the old ETL package, or GitHub credentials in `INPUT_DATA`. The `run` command handles `SIGTERM` and `SIGINT` and exits successfully only after validating a matching `PUBLISHED` Loom receipt.
 

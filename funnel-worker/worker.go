@@ -275,6 +275,12 @@ func runJob(ctx context.Context, config jobConfig, input inputData, deps workerD
 					slogWarnCleanup(localPath, err)
 				}
 			}
+			if sourcePath == documentReferencePath {
+				if err := reconcileStagedDocumentReferences(fileContext, workspace, localPath, input, repository, config, deps, maxFileSize); err != nil {
+					cleanupFile()
+					return "", nil, fmt.Errorf("reconcile %s: %w", sourcePath, err)
+				}
+			}
 			return localPath, cleanupFile, nil
 		},
 	}

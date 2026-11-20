@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -24,47 +25,60 @@ const fileSHA256System = "https://humantumoratlas.org/FILE_SHA256"
 
 type ndjsonRecord map[string]json.RawMessage
 
-func (j *job) reconcileDocumentReferences(repository, directory string) error {
-	pointers, err := inventory.List(j.ctx, inventory.Options{
-		RepositoryRoot: repository, Ref: j.input.GHCommitHash,
-		ExcludePrefixes: []string{metaDir, configDir},
-	})
+const documentReferencePath = "META/DocumentReference.ndjson"
+const researchStudyPath = "META/ResearchStudy.ndjson"
+
+func reconcileStagedDocumentReferences(ctx context.Context, workspace, localPath string, input inputData, repository githubRepository, config jobConfig, deps workerDependencies, limit int64) error {
+	pointerList, err := deps.github.listDataPointers(ctx, repository, input.Commit)
 	if err != nil {
 		return err
 	}
-	firstPointer := make(map[string]inventory.Pointer)
-	paths := make(map[string][]string)
-	for _, pointer := range pointers {
-		if _, exists := firstPointer[pointer.SHA256]; !exists {
-			firstPointer[pointer.SHA256] = pointer
+	pointers := make(map[string]inventory.Pointer)
+	for _, pointer := range pointerList {
+		if _, exists := pointers[pointer.SHA256]; !exists {
+			pointers[pointer.SHA256] = pointer
 		}
-		paths[pointer.SHA256] = append(paths[pointer.SHA256], pointer.Path)
 	}
-	hashes := make([]string, 0, len(firstPointer))
-	for hash := range firstPointer {
+	hashes := make([]string, 0, len(pointers))
+	for hash := range pointers {
 		hashes = append(hashes, hash)
 	}
 	sort.Strings(hashes)
-
-	endpoint := j.input.APIEndpoint
-	objects, err := lookupSyfonFiles(j.ctx, endpoint, j.token, j.program, j.project, hashes)
+	objects, err := lookupSyfonFiles(ctx, config.drsURL, config.accessToken, input.Organization, input.Project, hashes)
 	if err != nil {
 		return err
 	}
-	return reconcileDocumentReferenceFiles(j.ctx, directory, endpoint, j.project, hashes, firstPointer, paths, objects)
+	return reconcileDocumentReferenceFile(ctx, localPath, config.drsURL, input.Project, hashes, pointers, objects, limit, func() (string, error) {
+		studyWorkspace, err := os.MkdirTemp(workspace, "reference-study-")
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(studyWorkspace)
+		path, err := fetchAndHydrateFileWithLimits(ctx, studyWorkspace, input.Commit, researchStudyPath, repository, deps.github, deps.drs, sourceLimits{maxFileBytes: limit})
+		if err != nil {
+			return "", fmt.Errorf("resolve %s for generated DocumentReferences: %w", researchStudyPath, err)
+		}
+		rows, err := readNDJSONRecords(path)
+		if err != nil {
+			return "", err
+		}
+		var id string
+		if len(rows) == 0 || sonic.ConfigStd.Unmarshal(rows[0]["id"], &id) != nil || id == "" {
+			return "", errors.New("ResearchStudy.ndjson needs a record with an id to generate DocumentReferences")
+		}
+		return id, nil
+	})
 }
 
-func reconcileDocumentReferenceFiles(
-	ctx context.Context, directory, endpoint, project string, hashes []string,
-	pointers map[string]inventory.Pointer, paths map[string][]string, objects map[string][]syfonFile,
+func reconcileDocumentReferenceFile(
+	ctx context.Context, documentPath, endpoint, project string, hashes []string,
+	pointers map[string]inventory.Pointer, objects map[string][]syfonFile, limit int64, resolveStudy func() (string, error),
 ) error {
-	documentPath := filepath.Join(directory, "DocumentReference.ndjson")
 	authored, err := readNDJSONRecords(documentPath)
 	if err != nil {
 		return err
 	}
 	namespace := uuid.NewSHA1(uuid.NameSpaceDNS, []byte(endpoint))
-	studySystem := endpoint + "/" + project
 	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
 	system := endpoint + "/" + project
 	authoredHashes := make(map[string]bool)
@@ -90,10 +104,7 @@ func reconcileDocumentReferenceFiles(
 		}
 	}
 
-	studyID, err := ensureResearchStudy(directory, namespace, studySystem, project)
-	if err != nil {
-		return err
-	}
+	var studyID string
 	records := make([]any, 0, len(authored)+len(hashes))
 	for _, row := range authored {
 		records = append(records, row)
@@ -106,15 +117,21 @@ func reconcileDocumentReferenceFiles(
 		candidates := objects[hash]
 		if len(candidates) == 0 {
 			missing++
-			slog.WarnContext(ctx, "Git pointers without a scoped Syfon record", "sha256", hash, "paths", paths[hash])
+			slog.WarnContext(ctx, "Git pointers without a scoped Syfon record", "sha256", hash, "path", pointers[hash].Path)
 			continue
+		}
+		if studyID == "" {
+			studyID, err = resolveStudy()
+			if err != nil {
+				return err
+			}
 		}
 		record := generatedDocumentReference(namespace, endpoint, project, studyID, hash, pointers[hash], candidates[0])
 		records = append(records, record)
 	}
 	slog.InfoContext(ctx, "Git/Syfon DocumentReferences reconciled", "authored", len(authored),
 		"generated", len(records)-len(authored), "missing_syfon", missing)
-	return writeNDJSONRecords(documentPath, records)
+	return writeNDJSONRecords(documentPath, records, limit)
 }
 
 func generatedDocumentReference(namespace uuid.UUID, endpoint, project, studyID, hash string, pointer inventory.Pointer, object syfonFile) map[string]any {
@@ -226,42 +243,6 @@ func setDocumentReferenceDRSID(row ndjsonRecord, system, id string) error {
 	return err
 }
 
-func ensureResearchStudy(directory string, namespace uuid.UUID, system, project string) (string, error) {
-	path := filepath.Join(directory, "ResearchStudy.ndjson")
-	rows, err := readNDJSONRecords(path)
-	if err != nil {
-		return "", err
-	}
-	if len(rows) > 0 {
-		var id string
-		if err := sonic.ConfigStd.Unmarshal(rows[0]["id"], &id); err != nil || id == "" {
-			return "", fmt.Errorf("authored ResearchStudy is missing an id")
-		}
-		if _, exists := rows[0]["rootDir"]; exists {
-			delete(rows[0], "rootDir")
-			records := make([]any, 0, len(rows))
-			for _, row := range rows {
-				records = append(records, row)
-			}
-			if err := writeNDJSONRecords(path, records); err != nil {
-				return "", err
-			}
-		}
-		return id, nil
-	}
-	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("authored ResearchStudy file is empty")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-	id := uuid.NewSHA1(namespace, []byte(project+"/"+system)).String()
-	return id, writeNDJSONRecords(path, []any{map[string]any{
-		"resourceType": "ResearchStudy", "id": id, "status": "active",
-		"description": "Skeleton ResearchStudy for " + project,
-		"identifier":  []map[string]string{{"use": "official", "system": system, "value": project}},
-	}})
-}
-
 func readNDJSONRecords(path string) ([]ndjsonRecord, error) {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -291,7 +272,7 @@ func readNDJSONRecords(path string) ([]ndjsonRecord, error) {
 	return records, scanner.Err()
 }
 
-func writeNDJSONRecords(path string, rows []any) error {
+func writeNDJSONRecords(path string, rows []any, limit int64) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return err
@@ -307,6 +288,15 @@ func writeNDJSONRecords(path string, rows []any) error {
 			_ = file.Close()
 			return err
 		}
+	}
+	size, err := file.Seek(0, io.SeekCurrent)
+	if err != nil || size > limit {
+		_ = file.Close()
+		return fmt.Errorf("reconciled DocumentReference exceeds the configured size limit or cannot be measured")
+	}
+	if err := file.Chmod(0o400); err != nil {
+		_ = file.Close()
+		return err
 	}
 	if err := file.Close(); err != nil {
 		return err
