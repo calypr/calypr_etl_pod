@@ -1,12 +1,11 @@
 # Building the ETL Docker Image
 
 The job is a native Go executable. It keeps the existing Sower environment
-contract (`INPUT_DATA`, `ACCESS_TOKEN`, and `GEN3_HOSTNAME`) and uses the
-exported Git-DRS and Forge Go command packages directly. A successful `put`
-clones and hydrates the repository, generates metadata through Forge's Go
-package, uploads the complete FHIR snapshot through Loom's multipart generation
-API. Without a repository Explorer definition it validates/materializes the
-default recipe and activates the generation as before. With
+contract (`INPUT_DATA`, `ACCESS_TOKEN`, and `GEN3_HOSTNAME`). A successful `put`
+checks out and hydrates the repository with Git-DRS, reconciles DocumentReferences
+through scoped Syfon hash lookups, and uploads the complete FHIR snapshot through
+Loom's multipart generation API. Without a repository Explorer definition, the
+job validates and materializes the default recipe, then activates the generation. With
 `CONFIG/<project>.json`, it posts the exact authored `ExplorerConfigV2` JSON to
 Loom's repository Explorer REST endpoint. The document may be a recipe-only
 schema/readiness baseline or a complete packet that also contains ETL-authored

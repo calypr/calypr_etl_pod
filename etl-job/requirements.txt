@@ -1,4 +1,0 @@
-boto3
-yp
-click
-numpy==1.26.4

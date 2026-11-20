@@ -48,7 +48,7 @@ flowchart LR
     E --> G["Existing Guppy refresh"]
 ```
 
-The replacement boundary in `fhir_import_export.py` is narrow:
+The original migration plan proposed this boundary in the retired Python importer:
 
 ```text
 remove: grip_delete → bulk_load_raw → get_project_data
