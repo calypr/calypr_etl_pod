@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -59,7 +62,7 @@ func TestPublishDataframeUsesLoomAuthorizationAndReturnsExactReceipt(t *testing.
 	defer server.Close()
 
 	var output strings.Builder
-	err := runDataframePublishFromEnvironment(func(key string) string {
+	err := runDataframePublishFromEnvironment(context.Background(), func(key string) string {
 		return map[string]string{
 			"ACCESS_TOKEN": token,
 			"LOOM_URL":     server.URL + "/loom",
@@ -86,7 +89,7 @@ func TestPublishDataframeRejectsRedirectWithoutFollowingIt(t *testing.T) {
 	defer redirect.Close()
 
 	var output strings.Builder
-	err := runDataframePublishFromEnvironment(func(key string) string {
+	err := runDataframePublishFromEnvironment(context.Background(), func(key string) string {
 		return map[string]string{
 			"ACCESS_TOKEN": "short-lived-token",
 			"LOOM_URL":     redirect.URL,
@@ -101,5 +104,26 @@ func TestPublishDataframeRejectsRedirectWithoutFollowingIt(t *testing.T) {
 	}
 	if output.Len() != 0 {
 		t.Fatalf("failure emitted success output %q", output.String())
+	}
+}
+
+func TestDataframePublicationUsesJobCancellation(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls.Add(1)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var output strings.Builder
+	err := runDataframePublishFromEnvironment(ctx, func(key string) string {
+		return map[string]string{
+			"ACCESS_TOKEN": "short-lived-token",
+			"LOOM_URL":     server.URL,
+			"INPUT_DATA":   `{"organization":"org","project":"project","explorerId":"default","receiptId":"receipt-1"}`,
+		}[key]
+	}, &output)
+	if !errors.Is(err, context.Canceled) || calls.Load() != 0 || output.Len() != 0 {
+		t.Fatalf("canceled publication returned %v, made %d requests, and emitted %q", err, calls.Load(), output.String())
 	}
 }

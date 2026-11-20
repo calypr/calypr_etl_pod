@@ -116,7 +116,7 @@ func TestRunJobFetchesPinnedFilesHydratesAndPublishesReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateReceipt(receipt, config.operationID); err != nil {
+	if err := validateReceipt(receipt.Receipt, config.operationID); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(drs.paths, []string{"META/Patient.ndjson"}) || drs.oid != fmt.Sprintf("sha256:%064x", 99) || drs.size != int64(len(patient)) || !drs.overwrite {

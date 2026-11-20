@@ -12,9 +12,10 @@ each staged file after upload. Loom manages the source load and publication.
 Selecting `META/DocumentReference.ndjson` also reconciles it against scoped
 Syfon records for data pointers in that commit. The worker reads the inventory
 from Gecko using the job’s Gen3 token and project READ access. The worker preserves authored
-records and generates missing references for unambiguous matches. If generation
-needs a study ID, the commit must contain `META/ResearchStudy.ndjson` with a
-study ID. The worker reads that file for context and uploads it only if selected.
+records and generates missing references for unambiguous matches.
+Generated references link to a study when `META/ResearchStudy.ndjson` is
+selected and has a study ID. Published loads report missing Syfon matches in
+the `LOOM_SOURCE_LOAD_RESULT` JSON line.
 Loom generates relationships from the uploaded FHIR records.
 
 The worker does not use Git, the old ETL package, or GitHub credentials in `INPUT_DATA`. The `run` command handles `SIGTERM` and `SIGINT` and exits successfully only after validating a matching `PUBLISHED` Loom receipt.

@@ -25,7 +25,7 @@ type dataframePublishInput struct {
 	ReceiptID    string `json:"receiptId"`
 }
 
-func runDataframePublishFromEnvironment(getenv environment, output io.Writer) error {
+func runDataframePublishFromEnvironment(parent context.Context, getenv environment, output io.Writer) error {
 	token, err := requiredEnvironment(getenv, "ACCESS_TOKEN")
 	if err != nil {
 		return err
@@ -42,7 +42,7 @@ func runDataframePublishFromEnvironment(getenv environment, output io.Writer) er
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), dataframePublishTimeout)
+	ctx, cancel := context.WithTimeout(parent, dataframePublishTimeout)
 	defer cancel()
 	client, err := authoring.New(loomURL, token, &http.Client{Timeout: dataframePublishTimeout})
 	if err != nil {

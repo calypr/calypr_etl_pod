@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,12 +18,14 @@ import (
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	var err error
 	switch {
 	case len(os.Args) == 2 && os.Args[1] == "run":
-		err = runFromEnvironment()
+		err = runFromEnvironment(ctx)
 	case len(os.Args) == 2 && os.Args[1] == "publish-dataframe":
-		err = runDataframePublishFromEnvironment(os.Getenv, os.Stdout)
+		err = runDataframePublishFromEnvironment(ctx, os.Getenv, os.Stdout)
 	default:
 		fmt.Fprintln(os.Stderr, "usage: funnel-etl run | publish-dataframe")
 		os.Exit(2)
@@ -33,7 +36,7 @@ func main() {
 	}
 }
 
-func runFromEnvironment() error {
+func runFromEnvironment(parent context.Context) error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	config, input, err := loadConfiguration(os.Getenv)
@@ -41,9 +44,7 @@ func runFromEnvironment() error {
 		return err
 	}
 
-	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	ctx, cancel := context.WithTimeout(signalCtx, jobTimeout)
+	ctx, cancel := context.WithTimeout(parent, jobTimeout)
 	defer cancel()
 	githubHTTP := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -86,7 +87,12 @@ func runFromEnvironment() error {
 		"state", receipt.State,
 		"reused", receipt.Reused,
 	)
-	return nil
+	result, err := json.Marshal(receipt)
+	if err != nil {
+		return fmt.Errorf("encode Loom source load result: %w", err)
+	}
+	_, err = fmt.Fprintf(os.Stdout, "LOOM_SOURCE_LOAD_RESULT %s\n", result)
+	return err
 }
 
 type environment func(string) string

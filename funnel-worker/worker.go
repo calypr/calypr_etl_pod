@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -58,6 +59,16 @@ type workerDependencies struct {
 	github    *githubSource
 	drs       drsPuller
 	publisher publisher
+}
+
+type sourceLoadResult struct {
+	loomingest.Receipt
+	Warnings []sourceLoadWarning `json:"warnings,omitempty"`
+}
+
+type sourceLoadWarning struct {
+	Code  string `json:"code"`
+	Count int    `json:"count,omitempty"`
 }
 
 type sourceLimits struct {
@@ -224,20 +235,20 @@ func validateServiceURL(value, name string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
-func runJob(ctx context.Context, config jobConfig, input inputData, deps workerDependencies) (loomingest.Receipt, error) {
+func runJob(ctx context.Context, config jobConfig, input inputData, deps workerDependencies) (sourceLoadResult, error) {
 	repository, err := validateInput(input)
 	if err != nil {
-		return loomingest.Receipt{}, err
+		return sourceLoadResult{}, err
 	}
 	if err := validateOperationID(config.operationID); err != nil {
-		return loomingest.Receipt{}, err
+		return sourceLoadResult{}, err
 	}
 	if deps.github == nil || deps.drs == nil || deps.publisher == nil {
-		return loomingest.Receipt{}, errors.New("publish worker dependencies are incomplete")
+		return sourceLoadResult{}, errors.New("publish worker dependencies are incomplete")
 	}
 	workspace, cleanup, err := createPrivateWorkspace(config.workspaceDir)
 	if err != nil {
-		return loomingest.Receipt{}, err
+		return sourceLoadResult{}, err
 	}
 	defer cleanup()
 	maxFileSize := config.maxFileBytes
@@ -252,6 +263,8 @@ func runJob(ctx context.Context, config jobConfig, input inputData, deps workerD
 		files[index] = loomingest.File{Path: sourcePath}
 		manifestFiles[index] = loomingest.ManifestFile{Path: sourcePath}
 	}
+	var missingSyfonMatches int
+	var reconciled bool
 	request := loomingest.Request{
 		Project:          input.ProjectID,
 		AuthResourcePath: fmt.Sprintf("/programs/%s/projects/%s", input.Organization, input.Project),
@@ -273,22 +286,32 @@ func runJob(ctx context.Context, config jobConfig, input inputData, deps workerD
 				}
 			}
 			if sourcePath == documentReferencePath {
-				if err := reconcileStagedDocumentReferences(fileContext, workspace, localPath, input, repository, config, deps, maxFileSize); err != nil {
+				missing, err := reconcileStagedDocumentReferences(fileContext, workspace, localPath, input, repository, config, deps, maxFileSize)
+				if err != nil {
 					cleanupFile()
 					return "", nil, fmt.Errorf("reconcile %s: %w", sourcePath, err)
 				}
+				missingSyfonMatches = missing
+				reconciled = true
 			}
 			return localPath, cleanupFile, nil
 		},
 	}
 	receipt, err := deps.publisher.Publish(ctx, request)
 	if err != nil {
-		return loomingest.Receipt{}, fmt.Errorf("publish selected metadata to Loom: %w", err)
+		return sourceLoadResult{}, fmt.Errorf("publish selected metadata to Loom: %w", err)
 	}
 	if err := validateReceipt(receipt, config.operationID); err != nil {
-		return loomingest.Receipt{}, err
+		return sourceLoadResult{}, err
 	}
-	return receipt, nil
+	result := sourceLoadResult{Receipt: receipt}
+	if missingSyfonMatches > 0 {
+		result.Warnings = append(result.Warnings, sourceLoadWarning{Code: "MISSING_SYFON_MATCHES", Count: missingSyfonMatches})
+	}
+	if !reconciled && slices.Contains(paths, documentReferencePath) {
+		result.Warnings = append(result.Warnings, sourceLoadWarning{Code: "RECONCILIATION_NOT_RECHECKED"})
+	}
+	return result, nil
 }
 
 func createPrivateWorkspace(root string) (string, func(), error) {
