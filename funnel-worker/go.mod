@@ -4,8 +4,9 @@ go 1.27.3
 
 require (
 	github.com/bytedance/sonic v1.15.4
-	github.com/calypr/git-drs v0.7.11
+	github.com/calypr/git-drs v0.7.12-0.20261103173235-90375f7554b0
 	github.com/calypr/loom/client v0.0.0-20261111045332-89cbb21a884a
+	github.com/calypr/syfon/apigen v0.3.5
 	github.com/google/go-github/v87 v87.0.0
 	github.com/google/uuid v1.6.0
 )
@@ -17,7 +18,6 @@ require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
-	github.com/calypr/syfon/apigen v0.3.5 // indirect
 	github.com/calypr/syfon/client v0.3.4-0.20260929222956-16a8b4363219 // indirect
 	github.com/cloudflare/circl v1.6.5 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
@@ -61,6 +61,7 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/tools v0.50.0 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

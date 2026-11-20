@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/calypr/syfon/apigen/internalapi"
 )
 
 func TestLookupSyfonFilesUsesHashesAndExactProjectScope(t *testing.T) {
@@ -16,25 +19,26 @@ func TestLookupSyfonFilesUsesHashesAndExactProjectScope(t *testing.T) {
 	var requestCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		if r.Method != http.MethodPost || r.URL.Path != "/index/bulk/hashes" {
+		if r.Method != http.MethodPost || r.URL.Path != "/syfon/index/bulk/hashes" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
-		var request syfonHashRequest
+		var request internalapi.BulkHashesRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatal(err)
 		}
 		if len(request.Hashes) != 2 || request.Hashes[0] != "sha256:"+first || request.Hashes[1] != "sha256:"+second {
 			t.Fatalf("hash request = %#v", request.Hashes)
 		}
-		_, _ = fmt.Fprintf(w, `{"results":{"sha256:%s":[{"did":"urn:good","organization":"HTAN_INT","project":"BForePC","name":"file.ndjson","size":42,"hashes":{"sha-256":"%s","md5":"md5-value"},"created_time":"2026-11-20T12:30:00Z","access_methods":[{"access_url":{"url":"https://drs.example/file"}}]},{"did":"urn:other-project","organization":"HTAN_INT","project":"AnotherProject","hashes":{"sha256":"%s"}}]},"records":[{"did":"urn:good","organization":"HTAN_INT","project":"BForePC","hashes":{"sha256":"%s"}},{"did":"urn:controlled","controlled_access":["/organization/HTAN_INT/project/BForePC"],"hashes":{"sha256":"%s"}},{"did":"urn:wrong-hash","organization":"HTAN_INT","project":"BForePC","hashes":{"sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}}]}`,
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"results":{"sha256:%s":[{"did":"urn:good","organization":"HTAN_INT","project":"BForePC","name":"file.ndjson","size":42,"hashes":{"sha-256":"%s","md5":"md5-value"},"created_time":"2026-11-20T12:30:00Z","access_methods":[{"access_url":{"url":"https://drs.example/file"}}]},{"did":"urn:other-project","organization":"HTAN_INT","project":"AnotherProject","hashes":{"sha256":"%s"}}]},"records":[{"did":"urn:good","organization":"HTAN_INT","project":"BForePC","hashes":{"sha256":"%s"}},{"did":"urn:controlled","file_name":"legacy.ndjson","controlled_access":["/organization/HTAN_INT/project/BForePC"],"hashes":{"sha256":"%s"}},{"did":"urn:wrong-hash","organization":"HTAN_INT","project":"BForePC","hashes":{"sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}}]}`,
 			first, first, first, first, second)
 	}))
 	defer server.Close()
 
-	got, err := lookupSyfonFiles(context.Background(), server.URL, "test-token", "HTAN_INT", "BForePC", []string{"SHA256:" + first, second, first})
+	got, err := lookupSyfonFiles(context.Background(), server.URL+"/syfon", "test-token", "HTAN_INT", "BForePC", []string{"SHA256:" + first, second, first})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,11 +50,11 @@ func TestLookupSyfonFilesUsesHashesAndExactProjectScope(t *testing.T) {
 	}
 	file := got[first][0]
 	if file.ID != "urn:good" || file.Name != "file.ndjson" || file.AccessURL != "https://drs.example/file" ||
-		file.MD5 != "md5-value" || file.SHA256 != first || file.Size != 42 ||
+		file.MD5 != "md5-value" ||
 		!file.CreatedAt.Equal(time.Date(2026, 11, 20, 12, 30, 0, 0, time.UTC)) {
 		t.Fatalf("mapped file = %#v", file)
 	}
-	if len(got[second]) != 1 || got[second][0].ID != "urn:controlled" {
+	if len(got[second]) != 1 || got[second][0].ID != "urn:controlled" || got[second][0].Name != "legacy.ndjson" {
 		t.Fatalf("controlled access results = %#v", got[second])
 	}
 }
@@ -68,6 +72,21 @@ func TestLookupSyfonFilesSkipsEmptyHashRequest(t *testing.T) {
 	}
 	if requested || len(got) != 0 {
 		t.Fatalf("request=%t result=%#v", requested, got)
+	}
+}
+
+func TestLookupSyfonFilesRejectsOversizedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"records":[]}%s`, strings.Repeat(" ", maxSyfonResponseBytes))
+	}))
+	defer server.Close()
+
+	_, err := lookupSyfonFiles(context.Background(), server.URL, "", "org", "project", []string{
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected oversized response error, got %v", err)
 	}
 }
 
@@ -97,7 +116,8 @@ func TestLookupSyfonFilesChunksLargeHashLists(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		var body syfonHashRequest
+		w.Header().Set("Content-Type", "application/json")
+		var body internalapi.BulkHashesRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}

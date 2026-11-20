@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,23 +10,18 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
+	"github.com/calypr/syfon/apigen/internalapi"
 )
 
 const syfonHashBatchSize = 500
+const maxSyfonResponseBytes = 8 << 20
 
 type syfonFile struct {
-	ID               string
-	Name             string
-	AccessURL        string
-	MD5              string
-	CreatedAt        time.Time
-	Size             int64
-	SHA256           string
-	ControlledAccess []string
-}
-
-type syfonHashRequest struct {
-	Hashes []string `json:"hashes"`
+	ID        string
+	Name      string
+	AccessURL string
+	MD5       string
+	CreatedAt time.Time
 }
 
 type syfonHashResponse struct {
@@ -36,22 +30,8 @@ type syfonHashResponse struct {
 }
 
 type syfonHashRecord struct {
-	AccessMethods    []syfonAccessMethod `json:"access_methods"`
-	ControlledAccess []string            `json:"controlled_access"`
-	CreatedTime      string              `json:"created_time"`
-	Did              string              `json:"did"`
-	Name             string              `json:"name"`
-	FileName         string              `json:"file_name"`
-	Hashes           map[string]string   `json:"hashes"`
-	Organization     string              `json:"organization"`
-	Project          string              `json:"project"`
-	Size             int64               `json:"size"`
-}
-
-type syfonAccessMethod struct {
-	AccessURL *struct {
-		URL string `json:"url"`
-	} `json:"access_url"`
+	internalapi.InternalRecord
+	FileName string `json:"file_name"`
 }
 
 func lookupSyfonFiles(
@@ -77,43 +57,39 @@ func lookupSyfonFiles(
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" || base.User != nil {
 		return nil, fmt.Errorf("Syfon endpoint is invalid")
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/index/bulk/hashes"
+	base.Path = strings.TrimRight(base.Path, "/") + "/"
+
+	httpClient := &http.Client{
+		Timeout: 60 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	options := []internalapi.ClientOption{internalapi.WithHTTPClient(httpClient)}
+	if accessToken := strings.TrimSpace(token); accessToken != "" {
+		options = append(options, internalapi.WithRequestEditorFn(func(_ context.Context, request *http.Request) error {
+			request.Header.Set("Authorization", "Bearer "+accessToken)
+			return nil
+		}))
+	}
+	syfon, err := internalapi.NewClient(base.String(), options...)
+	if err != nil {
+		return nil, fmt.Errorf("configure Syfon API client: %w", err)
+	}
 
 	seen := make(map[string]map[string]struct{}, len(requestHashes))
 	for hash := range requestedSet {
 		seen[hash] = make(map[string]struct{})
 	}
 
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
 	for start := 0; start < len(requestHashes); start += syfonHashBatchSize {
-		end := start + syfonHashBatchSize
-		if end > len(requestHashes) {
-			end = len(requestHashes)
-		}
+		end := min(start+syfonHashBatchSize, len(requestHashes))
 		batch := requestHashes[start:end]
-		body, err := sonic.ConfigStd.Marshal(syfonHashRequest{Hashes: prefixedSHA256Hashes(batch)})
-		if err != nil {
-			return nil, fmt.Errorf("encode Syfon hash lookup: %w", err)
-		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), bytes.NewReader(body))
-		if err != nil {
-			return nil, fmt.Errorf("create Syfon hash lookup request: %w", err)
-		}
-		request.Header.Set("Content-Type", "application/json")
-		if accessToken := strings.TrimSpace(token); accessToken != "" {
-			request.Header.Set("Authorization", "Bearer "+accessToken)
-		}
-
-		response, err := client.Do(request)
+		response, err := syfon.InternalBulkHashes(ctx, internalapi.BulkHashesRequest{Hashes: prefixedSHA256Hashes(batch)})
 		if err != nil {
 			return nil, fmt.Errorf("query Syfon objects by checksum: %w", err)
 		}
-		payload, readErr := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+		payload, readErr := io.ReadAll(io.LimitReader(response.Body, maxSyfonResponseBytes+1))
 		closeErr := response.Body.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("read Syfon hash lookup response: %w", readErr)
@@ -121,10 +97,12 @@ func lookupSyfonFiles(
 		if closeErr != nil {
 			return nil, fmt.Errorf("close Syfon hash lookup response: %w", closeErr)
 		}
+		if int64(len(payload)) > maxSyfonResponseBytes {
+			return nil, fmt.Errorf("Syfon hash lookup response exceeds %d bytes", maxSyfonResponseBytes)
+		}
 		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 			return nil, fmt.Errorf("Syfon hash lookup returned HTTP %d", response.StatusCode)
 		}
-
 		var decoded syfonHashResponse
 		if err := sonic.ConfigStd.Unmarshal(payload, &decoded); err != nil {
 			return nil, fmt.Errorf("decode Syfon hash lookup response: %w", err)
@@ -135,14 +113,17 @@ func lookupSyfonFiles(
 		}
 		records = append(records, decoded.Records...)
 		for _, record := range records {
-			if !syfonRecordMatchesScope(record, organization, project) {
+			if !syfonRecordMatchesScope(record.InternalRecord, organization, project) {
 				continue
 			}
-			file, ok := syfonFileFromRecord(record)
+			file, ok := syfonFileFromRecord(record.InternalRecord)
 			if !ok {
 				continue
 			}
-			for hash := range fileSHA256Hashes(record.Hashes) {
+			if file.Name == "" {
+				file.Name = strings.TrimSpace(record.FileName)
+			}
+			for hash := range fileSHA256Hashes(hashInfo(record.Hashes)) {
 				if _, requested := requestedSet[hash]; !requested {
 					continue
 				}
@@ -202,9 +183,15 @@ func fileSHA256Hashes(hashes map[string]string) map[string]struct{} {
 	return result
 }
 
-func syfonRecordMatchesScope(record syfonHashRecord, organization, project string) bool {
-	recordOrganization := strings.TrimSpace(record.Organization)
-	recordProject := strings.TrimSpace(record.Project)
+func syfonRecordMatchesScope(record internalapi.InternalRecord, organization, project string) bool {
+	recordOrganization := ""
+	if record.Organization != nil {
+		recordOrganization = strings.TrimSpace(*record.Organization)
+	}
+	recordProject := ""
+	if record.Project != nil {
+		recordProject = strings.TrimSpace(*record.Project)
+	}
 	if recordOrganization != "" && recordOrganization != organization {
 		return false
 	}
@@ -215,7 +202,10 @@ func syfonRecordMatchesScope(record syfonHashRecord, organization, project strin
 		return true
 	}
 	expected := "/organization/" + strings.TrimSpace(organization) + "/project/" + strings.TrimSpace(project)
-	for _, scope := range record.ControlledAccess {
+	if record.ControlledAccess == nil {
+		return strings.TrimSpace(organization) == "" && strings.TrimSpace(project) == ""
+	}
+	for _, scope := range *record.ControlledAccess {
 		if strings.TrimSpace(scope) == expected {
 			return true
 		}
@@ -223,42 +213,30 @@ func syfonRecordMatchesScope(record syfonHashRecord, organization, project strin
 	return strings.TrimSpace(organization) == "" && strings.TrimSpace(project) == ""
 }
 
-func syfonFileFromRecord(record syfonHashRecord) (syfonFile, bool) {
+func syfonFileFromRecord(record internalapi.InternalRecord) (syfonFile, bool) {
 	id := strings.TrimSpace(record.Did)
 	if id == "" {
 		return syfonFile{}, false
 	}
-	name := strings.TrimSpace(record.Name)
-	if name == "" {
-		name = strings.TrimSpace(record.FileName)
-	}
+	name := strings.TrimSpace(pointerString(record.Name))
 	file := syfonFile{
-		ID:               id,
-		Name:             name,
-		CreatedAt:        parseSyfonCreatedAt(record.CreatedTime),
-		Size:             record.Size,
-		SHA256:           firstSHA256(record.Hashes),
-		ControlledAccess: append([]string(nil), record.ControlledAccess...),
-		MD5:              checksumOfType(record.Hashes, "md5"),
+		ID:        id,
+		Name:      name,
+		CreatedAt: parseSyfonCreatedAt(pointerString(record.CreatedTime)),
+		MD5:       checksumOfType(hashInfo(record.Hashes), "md5"),
 	}
-	for _, method := range record.AccessMethods {
-		if method.AccessURL == nil {
-			continue
-		}
-		if value := strings.TrimSpace(method.AccessURL.URL); value != "" {
-			file.AccessURL = value
-			break
+	if record.AccessMethods != nil {
+		for _, method := range *record.AccessMethods {
+			if method.AccessUrl == nil {
+				continue
+			}
+			if value := strings.TrimSpace(method.AccessUrl.Url); value != "" {
+				file.AccessURL = value
+				break
+			}
 		}
 	}
 	return file, true
-}
-
-func firstSHA256(hashes map[string]string) string {
-	values := fileSHA256Hashes(hashes)
-	for hash := range values {
-		return hash
-	}
-	return ""
 }
 
 func checksumOfType(hashes map[string]string, wanted string) string {
@@ -268,6 +246,20 @@ func checksumOfType(hashes map[string]string, wanted string) string {
 		}
 	}
 	return ""
+}
+
+func hashInfo(value *internalapi.HashInfo) map[string]string {
+	if value == nil {
+		return nil
+	}
+	return map[string]string(*value)
+}
+
+func pointerString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func parseSyfonCreatedAt(value string) time.Time {
