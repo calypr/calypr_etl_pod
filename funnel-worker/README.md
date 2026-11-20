@@ -1,7 +1,7 @@
 # Funnel worker
 
-The image supports two commands. Use `run` to load selected metadata files and
-`publish-dataframe` to publish a saved dataframe through Loom.
+Use `run` to load selected FHIR files into Loom’s ArangoDB source store. Use
+`publish-dataframe` to publish a saved dataframe to ClickHouse through Loom.
 
 ## Load selected metadata
 
@@ -31,7 +31,7 @@ to ClickHouse for the Viewer. On success the worker writes a
 
 ## Local build and tests
 
-The worker pins the Loom ingestion client in `go.mod`. Run these commands from `funnel-job`:
+The worker pins the Loom ingestion client in `go.mod`. Run these commands from `funnel-worker`:
 
 ```sh
 go test ./...

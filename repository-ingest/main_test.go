@@ -327,6 +327,21 @@ func TestReadRepositoryExplorerDefinitionRequiresExactV2(t *testing.T) {
 	if got, present, err := j.readRepositoryExplorerDefinition(dir); err != nil || !present || string(got) != withPresentation {
 		t.Fatalf("repository presentation = %s, present=%v, err=%v", got, present, err)
 	}
+	for _, invalid := range []struct {
+		name, payload, errorText string
+	}{
+		{"unknown field", strings.TrimSuffix(config, "}") + `,"unexpected":true}`, "unknown field"},
+		{"extra JSON value", config + `{}`, "trailing JSON"},
+	} {
+		t.Run(invalid.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(dir, "program-project.json"), []byte(invalid.payload), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := j.readRepositoryExplorerDefinition(dir); err == nil || !strings.Contains(err.Error(), invalid.errorText) {
+				t.Fatalf("expected %q error, got %v", invalid.errorText, err)
+			}
+		})
+	}
 }
 
 func TestRepositoryDeployUsesV2RESTEndpoint(t *testing.T) {

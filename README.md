@@ -1,10 +1,10 @@
-# Calypr ETL jobs
+# Calypr data jobs
 
-This repository builds two Go container images that work with Loom.
+| Task | Job | Destination |
+| --- | --- | --- |
+| Load a complete Git repository snapshot | [`repository-ingest`](repository-ingest/README.md) runs under Sower as `calypr-etl`. It hydrates metadata with Git-DRS and reconciles FHIR DocumentReferences through Syfon. | Loom source data in ArangoDB |
+| Load selected FHIR files from a GitHub commit | [`funnel-worker`](funnel-worker/README.md) runs under Funnel with the `run` command. | Loom source data in ArangoDB |
+| Publish a saved dataframe for the Viewer | [`funnel-worker`](funnel-worker/README.md#publish-a-dataframe) runs under Funnel with the `publish-dataframe` command. | Published tables in ClickHouse |
 
-| Job | What it does |
-| --- | --- |
-| Repository ETL | Sower runs `calypr-etl` to load a Git snapshot. The job hydrates metadata with Git-DRS, reconciles FHIR DocumentReferences through Syfon, and sends the snapshot to Loom. |
-| Funnel worker | `funnel-etl run` loads selected FHIR files from a pinned GitHub commit. `funnel-etl publish-dataframe` asks Loom to publish a saved dataframe for the Viewer. |
-
-See the [repository ETL guide](etl-job/README.md) and the [Funnel worker guide](funnel-job/README.md) for configuration and local checks.
+The jobs call Loom. Loom owns writes to ArangoDB and ClickHouse. The repository
+ingest job can also activate an Explorer from its repository configuration.

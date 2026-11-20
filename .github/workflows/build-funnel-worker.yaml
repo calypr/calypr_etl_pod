@@ -3,11 +3,11 @@ name: Build and publish Funnel dataframe worker
 on:
   pull_request:
     paths:
-      - 'funnel-job/**'
+      - 'funnel-worker/**'
       - '.github/workflows/build-funnel-worker.yaml'
   push:
     paths:
-      - 'funnel-job/**'
+      - 'funnel-worker/**'
       - '.github/workflows/build-funnel-worker.yaml'
   workflow_dispatch:
 
@@ -33,16 +33,16 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: funnel-job/go.mod
+          go-version-file: funnel-worker/go.mod
           cache: true
-          cache-dependency-path: funnel-job/go.sum
+          cache-dependency-path: funnel-worker/go.sum
 
       - name: Run Go tests
-        working-directory: funnel-job
+        working-directory: funnel-worker
         run: go test -count=1 ./...
 
       - name: Run Go vet
-        working-directory: funnel-job
+        working-directory: funnel-worker
         run: go vet ./...
 
   build-and-push:
@@ -86,8 +86,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ./funnel-job
-          file: ./funnel-job/Dockerfile
+          context: ./funnel-worker
+          file: ./funnel-worker/Dockerfile
           platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: >-

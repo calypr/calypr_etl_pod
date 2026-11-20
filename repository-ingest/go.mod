@@ -3,6 +3,7 @@ module github.com/calypr/calypr-etl
 go 1.26.6
 
 require (
+	github.com/bytedance/sonic v1.15.4
 	github.com/calypr/git-drs v0.7.12-0.20261102232226-75c86f5a2358
 	github.com/google/uuid v1.6.0
 )
@@ -13,7 +14,6 @@ require (
 	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
-	github.com/bytedance/sonic v1.15.4 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
 	github.com/calypr/syfon/apigen v0.3.7 // indirect
 	github.com/calypr/syfon/client v0.3.11 // indirect

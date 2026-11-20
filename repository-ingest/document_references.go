@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/inventory"
 	"github.com/google/uuid"
 )
@@ -169,7 +170,7 @@ func documentReferenceHash(row ndjsonRecord) (string, error) {
 		} `json:"identifier"`
 	}
 	if content := row["content"]; len(content) > 0 {
-		if err := json.Unmarshal(content, &fields.Content); err != nil {
+		if err := sonic.ConfigStd.Unmarshal(content, &fields.Content); err != nil {
 			return "", err
 		}
 	}
@@ -181,7 +182,7 @@ func documentReferenceHash(row ndjsonRecord) (string, error) {
 		}
 	}
 	if identifiers := row["identifier"]; len(identifiers) > 0 {
-		if err := json.Unmarshal(identifiers, &fields.Identifier); err != nil {
+		if err := sonic.ConfigStd.Unmarshal(identifiers, &fields.Identifier); err != nil {
 			return "", err
 		}
 	}
@@ -199,10 +200,10 @@ func normalizeDocumentHash(value string) string {
 
 func setDocumentReferenceDRSID(row ndjsonRecord, system, id string) error {
 	var identifiers []json.RawMessage
-	if err := json.Unmarshal(row["identifier"], &identifiers); err != nil && len(row["identifier"]) != 0 {
+	if err := sonic.ConfigStd.Unmarshal(row["identifier"], &identifiers); err != nil && len(row["identifier"]) != 0 {
 		return fmt.Errorf("read authored DocumentReference identifiers: %w", err)
 	}
-	official, err := json.Marshal(map[string]string{"use": "official", "system": system, "value": id})
+	official, err := sonic.ConfigStd.Marshal(map[string]string{"use": "official", "system": system, "value": id})
 	if err != nil {
 		return err
 	}
@@ -211,7 +212,7 @@ func setDocumentReferenceDRSID(row ndjsonRecord, system, id string) error {
 		var identifier struct {
 			Use, System, Value string
 		}
-		if err := json.Unmarshal(raw, &identifier); err != nil {
+		if err := sonic.ConfigStd.Unmarshal(raw, &identifier); err != nil {
 			return err
 		}
 		if index == 0 && identifier.Value == id {
@@ -221,7 +222,7 @@ func setDocumentReferenceDRSID(row ndjsonRecord, system, id string) error {
 			next = append(next, raw)
 		}
 	}
-	row["identifier"], err = json.Marshal(next)
+	row["identifier"], err = sonic.ConfigStd.Marshal(next)
 	return err
 }
 
@@ -233,7 +234,7 @@ func ensureResearchStudy(directory string, namespace uuid.UUID, system, project 
 	}
 	if len(rows) > 0 {
 		var id string
-		if err := json.Unmarshal(rows[0]["id"], &id); err != nil || id == "" {
+		if err := sonic.ConfigStd.Unmarshal(rows[0]["id"], &id); err != nil || id == "" {
 			return "", fmt.Errorf("authored ResearchStudy is missing an id")
 		}
 		if _, exists := rows[0]["rootDir"]; exists {
@@ -279,7 +280,7 @@ func readNDJSONRecords(path string) ([]ndjsonRecord, error) {
 			continue
 		}
 		var record ndjsonRecord
-		if err := json.Unmarshal(line, &record); err != nil {
+		if err := sonic.ConfigStd.Unmarshal(line, &record); err != nil {
 			return nil, fmt.Errorf("decode %s row %d: %w", filepath.Base(path), len(records)+1, err)
 		}
 		if record == nil {
@@ -300,7 +301,7 @@ func writeNDJSONRecords(path string, rows []any) error {
 		return err
 	}
 	defer os.Remove(file.Name())
-	encoder := json.NewEncoder(file)
+	encoder := sonic.ConfigStd.NewEncoder(file)
 	for _, row := range rows {
 		if err := encoder.Encode(row); err != nil {
 			_ = file.Close()

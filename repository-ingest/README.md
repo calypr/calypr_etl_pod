@@ -1,4 +1,4 @@
-# Repository ETL
+# Repository source ingestion
 
 Sower starts this job with the `fhir_import_export` action. The image runs the
 `calypr-etl` Go executable.
@@ -12,7 +12,7 @@ repository load, set `method` to `put` in `INPUT_DATA` and supply
 
 The job checks out the specified commit, hydrates metadata with Git-DRS,
 and reconciles DocumentReferences against Syfon within the project. It sends
-the FHIR snapshot to Loom. Loom generates relationships and activates the
+the FHIR snapshot to Loom’s ArangoDB source store. Loom generates relationships and activates the
 generation after validation and materialization.
 
 If the repository has `CONFIG/<project>.json`, the job sends it to Loom as
@@ -33,7 +33,7 @@ uses a fresh generation for that run.
 
 ## Build and test locally
 
-Run these commands from `etl-job`.
+Run these commands from `repository-ingest`.
 
 ```sh
 go test ./...

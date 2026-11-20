@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytedance/sonic"
+
 	gitdrs "github.com/calypr/git-drs/client"
 )
 
@@ -518,7 +520,7 @@ func (j *job) readRepositoryExplorerDefinition(dir string) (json.RawMessage, boo
 	if err != nil {
 		return nil, false, fmt.Errorf("read repository Explorer definition: %w", err)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder := sonic.ConfigStd.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 	var definition explorerConfigV2
 	if err := decoder.Decode(&definition); err != nil {
@@ -560,7 +562,7 @@ func (j *job) deployRepositoryExplorerConfigV2(definition json.RawMessage) error
 		TranslationVersion string `json:"translationVersion"`
 		Activated          bool   `json:"activated"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&deployed); err != nil {
+	if err := sonic.ConfigStd.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&deployed); err != nil {
 		return fmt.Errorf("deploy ExplorerConfigV2: decode Loom deployment response: %w", err)
 	}
 	expectedRecipe := "explorer_" + j.projectID + "_default"
@@ -604,7 +606,7 @@ type recipeValidation struct {
 func configuredSelectors(requiredOutputs []string) ([]dataframeSelector, error) {
 	if raw := strings.TrimSpace(os.Getenv("LOOM_REQUIRED_DATAFRAME_SELECTORS")); raw != "" {
 		var selectors []dataframeSelector
-		if err := json.Unmarshal([]byte(raw), &selectors); err != nil {
+		if err := sonic.ConfigStd.Unmarshal([]byte(raw), &selectors); err != nil {
 			return nil, fmt.Errorf("parse LOOM_REQUIRED_DATAFRAME_SELECTORS: %w", err)
 		}
 		if len(selectors) == 0 {
@@ -933,7 +935,7 @@ func (j *job) graphql(query string, variables map[string]any, out any) error {
 
 func (j *job) graphqlAttempt(query string, variables map[string]any, out any) error {
 	payload := map[string]any{"query": query, "variables": variables}
-	body, err := json.Marshal(payload)
+	body, err := sonic.ConfigStd.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -966,7 +968,7 @@ func (j *job) graphqlAttempt(query string, variables map[string]any, out any) er
 			} `json:"extensions"`
 		} `json:"errors"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+	if err := sonic.ConfigStd.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		return err
 	}
 	if len(envelope.Errors) > 0 {
@@ -976,7 +978,7 @@ func (j *job) graphqlAttempt(query string, variables map[string]any, out any) er
 			Retryable: value.Extensions.Retryable, FieldPath: value.Extensions.FieldPath, Details: value.Extensions.Details,
 		}
 	}
-	return json.Unmarshal(envelope.Data, out)
+	return sonic.ConfigStd.Unmarshal(envelope.Data, out)
 }
 
 func validateInput(in inputData) error {
@@ -995,7 +997,7 @@ func validateInput(in inputData) error {
 
 func parseInput(raw string) (inputData, error) {
 	var input inputData
-	if err := json.Unmarshal([]byte(raw), &input); err != nil {
+	if err := sonic.ConfigStd.Unmarshal([]byte(raw), &input); err != nil {
 		return inputData{}, fmt.Errorf("parse INPUT_DATA: %w", err)
 	}
 	if strings.TrimSpace(input.Method) == "" {
@@ -1006,7 +1008,7 @@ func parseInput(raw string) (inputData, error) {
 
 func redactInputPacket(raw string) string {
 	var packet map[string]any
-	if err := json.Unmarshal([]byte(raw), &packet); err != nil {
+	if err := sonic.ConfigStd.Unmarshal([]byte(raw), &packet); err != nil {
 		return fmt.Sprintf("<invalid JSON: %s>", err)
 	}
 	for key := range packet {
@@ -1015,7 +1017,7 @@ func redactInputPacket(raw string) string {
 			packet[key] = "[REDACTED]"
 		}
 	}
-	encoded, err := json.Marshal(packet)
+	encoded, err := sonic.ConfigStd.Marshal(packet)
 	if err != nil {
 		return "<unable to encode INPUT_DATA>"
 	}
@@ -1037,7 +1039,7 @@ func fetchUser(ctx context.Context, hostname, token string) (map[string]any, err
 		return nil, responseError(resp)
 	}
 	var user map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	if err := sonic.ConfigStd.NewDecoder(resp.Body).Decode(&user); err != nil {
 		return nil, err
 	}
 	return user, nil
@@ -1125,7 +1127,7 @@ func validateDocumentReferences(dir string) error {
 		var resource struct {
 			ID string `json:"id"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &resource); err != nil {
+		if err := sonic.ConfigStd.Unmarshal(scanner.Bytes(), &resource); err != nil {
 			return fmt.Errorf("parse DocumentReference: %w", err)
 		}
 		resource.ID = strings.TrimSpace(resource.ID)
@@ -1250,7 +1252,7 @@ func responseError(resp *http.Response) error {
 	var envelope struct {
 		Error httpError `json:"error"`
 	}
-	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Error.Message != "" {
+	if err := sonic.ConfigStd.Unmarshal(body, &envelope); err == nil && envelope.Error.Message != "" {
 		return envelope.Error
 	}
 	return fmt.Errorf("HTTP %s: %s", resp.Status, strings.TrimSpace(string(body)))
@@ -1299,7 +1301,7 @@ func fatalOutput(output *outputData, err error) {
 }
 
 func writeOutput(output *outputData) {
-	encoded, err := json.Marshal(output)
+	encoded, err := sonic.ConfigStd.Marshal(output)
 	if err != nil {
 		fmt.Fprintf(os.Stdout, "[out] {\"logs\":[%q]}\n", err.Error())
 		return

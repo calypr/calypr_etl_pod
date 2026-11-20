@@ -3,13 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/bytedance/sonic"
 )
 
 const syfonHashBatchSize = 500
@@ -95,7 +96,7 @@ func lookupSyfonFiles(
 			end = len(requestHashes)
 		}
 		batch := requestHashes[start:end]
-		body, err := json.Marshal(syfonHashRequest{Hashes: prefixedSHA256Hashes(batch)})
+		body, err := sonic.ConfigStd.Marshal(syfonHashRequest{Hashes: prefixedSHA256Hashes(batch)})
 		if err != nil {
 			return nil, fmt.Errorf("encode Syfon hash lookup: %w", err)
 		}
@@ -125,7 +126,7 @@ func lookupSyfonFiles(
 		}
 
 		var decoded syfonHashResponse
-		if err := json.Unmarshal(payload, &decoded); err != nil {
+		if err := sonic.ConfigStd.Unmarshal(payload, &decoded); err != nil {
 			return nil, fmt.Errorf("decode Syfon hash lookup response: %w", err)
 		}
 		var records []syfonHashRecord
