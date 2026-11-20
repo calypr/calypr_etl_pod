@@ -17,11 +17,17 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 || os.Args[1] != "run" {
-		fmt.Fprintln(os.Stderr, "usage: funnel-etl run")
+	var err error
+	switch {
+	case len(os.Args) == 2 && os.Args[1] == "run":
+		err = runFromEnvironment()
+	case len(os.Args) == 2 && os.Args[1] == "publish-dataframe":
+		err = runDataframePublishFromEnvironment(os.Getenv, os.Stdout)
+	default:
+		fmt.Fprintln(os.Stderr, "usage: funnel-etl run | publish-dataframe")
 		os.Exit(2)
 	}
-	if err := runFromEnvironment(); err != nil {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "funnel publish failed:", redactError(err, strings.TrimSpace(os.Getenv("ACCESS_TOKEN")), strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))))
 		os.Exit(1)
 	}
