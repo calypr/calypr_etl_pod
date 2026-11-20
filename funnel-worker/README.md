@@ -10,7 +10,8 @@ Git-LFS pointers through Git-DRS, and passes staged files to Loom. It removes
 each staged file after upload. Loom manages the source load and publication.
 
 Selecting `META/DocumentReference.ndjson` also reconciles it against scoped
-Syfon records for data pointers in that commit. The worker preserves authored
+Syfon records for data pointers in that commit. The worker reads the inventory
+from Gecko using the job’s Gen3 token and project READ access. The worker preserves authored
 records and generates missing references for unambiguous matches. If generation
 needs a study ID, the commit must contain `META/ResearchStudy.ndjson` with a
 study ID. The worker reads that file for context and uploads it only if selected.
@@ -22,6 +23,7 @@ The worker does not use Git, the old ETL package, or GitHub credentials in `INPU
 
 - `INPUT_DATA`: JSON with `projectId`, `organization`, `project`, `repository`, `commit`, and `files`.
 - `ACCESS_TOKEN`: Gen3 bearer token for Git-DRS and Loom.
+- `GECKO_URL`: trusted Gecko API base URL, required when DocumentReference is selected.
 - `GITHUB_TOKEN`: read token used only for GitHub API requests.
 - `DRS_URL`: trusted Syfon/Git-DRS base URL.
 - `LOOM_URL`: trusted Loom API base URL.

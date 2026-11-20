@@ -130,6 +130,18 @@ func loadConfiguration(getenv environment) (jobConfig, inputData, error) {
 	if _, err := validateInput(input); err != nil {
 		return jobConfig{}, inputData{}, err
 	}
+	for _, sourcePath := range input.Files {
+		if sourcePath == documentReferencePath {
+			if len(input.Commit) != 40 {
+				return jobConfig{}, inputData{}, fmt.Errorf("Gecko pointer inventory requires a 40-character Git commit SHA")
+			}
+			config.geckoURL, err = requiredServiceURL(getenv, "GECKO_URL")
+			if err != nil {
+				return jobConfig{}, inputData{}, err
+			}
+			break
+		}
+	}
 	return config, input, nil
 }
 

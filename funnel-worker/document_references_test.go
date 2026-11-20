@@ -15,26 +15,18 @@ import (
 
 func TestRunJobReconcilesOnlySelectedDocumentReference(t *testing.T) {
 	commit := strings.Repeat("a", 40)
-	tree := strings.Repeat("b", 40)
-	firstBlob := strings.Repeat("c", 40)
-	secondBlob := strings.Repeat("d", 40)
 	authoredHash := strings.Repeat("1", 64)
 	generatedHash := strings.Repeat("2", 64)
-	pointer := func(hash string) string {
-		return fmt.Sprintf("%s\noid sha256:%s\nsize 7\n", lfsPointerVersion, hash)
-	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v3/repos/calypr/meta/git/commits/"+commit, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"tree":{"sha":%q}}`, tree)
-	})
-	mux.HandleFunc("/api/v3/repos/calypr/meta/git/trees/"+tree, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("recursive") != "1" {
-			t.Error("expected recursive inventory")
+	mux.HandleFunc("/gecko/git/projects/org/project/pointer-inventory", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Query().Get("commit") != commit {
+			t.Error("Gecko inventory request must use the pinned commit")
 		}
-		fmt.Fprintf(w, `{"tree":[{"path":"data/one","mode":"100644","type":"blob","sha":%q,"size":%d},{"path":"data/two","mode":"100644","type":"blob","sha":%q,"size":%d}]}`, firstBlob, len(pointer(authoredHash)), secondBlob, len(pointer(generatedHash)))
+		if r.Header.Get("Authorization") != "Bearer gen3-token" {
+			t.Error("Gecko inventory must use the Gen3 token")
+		}
+		fmt.Fprintf(w, `[{"path":"data/one","sha256":%q,"size":7},{"path":"data/two","sha256":%q,"size":7}]`, authoredHash, generatedHash)
 	})
-	mux.HandleFunc("/api/v3/repos/calypr/meta/git/blobs/"+firstBlob, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, pointer(authoredHash)) })
-	mux.HandleFunc("/api/v3/repos/calypr/meta/git/blobs/"+secondBlob, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, pointer(generatedHash)) })
 	mux.HandleFunc("/api/v3/repos/calypr/meta/contents/META/DocumentReference.ndjson", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("ref") != commit {
 			t.Error("DocumentReference request must use the pinned commit")
@@ -60,7 +52,7 @@ func TestRunJobReconcilesOnlySelectedDocumentReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	publisher := &recordingPublisher{receipt: loomingest.Receipt{OperationID: "task", State: "PUBLISHED", ManifestHash: "manifest", ExecutionID: "execution"}}
-	config := jobConfig{workspaceDir: t.TempDir(), operationID: "task", drsURL: server.URL, accessToken: "gen3-token"}
+	config := jobConfig{workspaceDir: t.TempDir(), operationID: "task", drsURL: server.URL, geckoURL: server.URL + "/gecko", accessToken: "gen3-token"}
 	input := inputData{ProjectID: "org-project", Organization: "org", Project: "project", Repository: "https://github.com/calypr/meta", Commit: commit, Files: []string{documentReferencePath}}
 	if _, err := runJob(context.Background(), config, input, workerDependencies{github: source, drs: &recordingDRS{}, publisher: publisher}); err != nil {
 		t.Fatal(err)

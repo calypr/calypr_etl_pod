@@ -29,17 +29,11 @@ const researchStudyPath = "META/ResearchStudy.ndjson"
 
 func reconcileStagedDocumentReferences(ctx context.Context, workspace, localPath string, input inputData, repository githubRepository, config jobConfig, deps workerDependencies, limit int64) error {
 	inventoryStarted := time.Now()
-	pointerList, err := deps.github.listDataPointers(ctx, repository, input.Commit)
+	pointers, err := fetchGeckoDataPointers(ctx, config.geckoURL, config.accessToken, input)
 	if err != nil {
 		return err
 	}
-	slog.InfoContext(ctx, "Git data pointers discovered", "pointers", len(pointerList), "duration", time.Since(inventoryStarted))
-	pointers := make(map[string]inventory.Pointer, len(pointerList))
-	for _, pointer := range pointerList {
-		if _, exists := pointers[pointer.SHA256]; !exists {
-			pointers[pointer.SHA256] = pointer
-		}
-	}
+	slog.InfoContext(ctx, "Git data pointers discovered", "unique_hashes", len(pointers), "duration", time.Since(inventoryStarted))
 	hashes := make([]string, 0, len(pointers))
 	for hash := range pointers {
 		hashes = append(hashes, hash)

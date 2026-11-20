@@ -40,6 +40,7 @@ type inputData struct {
 type jobConfig struct {
 	accessToken  string
 	githubToken  string
+	geckoURL     string
 	drsURL       string
 	loomURL      string
 	operationID  string
